@@ -221,3 +221,80 @@ fit |>
     ## 5 boroughQueens             7.58      8.68     0.873 3.82e- 1
     ## 6 room_typePrivate room  -105.        2.05   -51.2   0       
     ## 7 room_typeShared room   -129.        6.15   -21.0   2.24e-97
+
+# general model diagnotics with `mdoelr` package
+
+Regression diagnostics can identify issues in model fit, especially
+related to certain failures in model assumptions. Examining residuals
+and fitted values are therefore an imporant component of any modeling
+exercise.
+
+## draw some plots related to residuals
+
+``` r
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = resid)) +
+  geom_density()
+```
+
+    ## Warning: Removed 9962 rows containing non-finite values (`stat_density()`).
+
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-1.png" width="90%" />
+
+``` r
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = borough, y = resid)) +
+  geom_violin()
+```
+
+    ## Warning: Removed 9962 rows containing non-finite values (`stat_ydensity()`).
+
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-2.png" width="90%" />
+
+``` r
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = stars, y = resid)) +
+  geom_point()
+```
+
+    ## Warning: Removed 9962 rows containing missing values (`geom_point()`).
+
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-3.png" width="90%" />
+\* This example has some obvious issues, most notably the presence of
+extremely large outliers in price and a generally skewed residual
+distribution. \* There are a few things we might try to do here –
+including: \* creating a formal rule for the exclusion of outliers \*
+transforming the price variable (e.g. using a log transformation) \*
+fitting a model that is robust to outliers. \* (For what it’s worth, I’d
+probably use a combination of median regression, which is less sensitive
+to outliers than OLS, and maybe bootstrapping for inference. If that’s
+not feasible, I’d omit rentals with price over \$1000 (\< 0.5% of the
+sample) from the primary analysis and examine these separately. I
+usually avoid transforming the outcome, because the results model is
+difficult to interpret.)
+
+### get prediction values
+
+the modelr package can also provide us prediction values
+
+``` r
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
+    ## # A tibble: 40,492 × 6
+    ##    price stars borough neighbourhood room_type        pred
+    ##    <dbl> <dbl> <chr>   <chr>         <chr>           <dbl>
+    ##  1    99   5   Bronx   City Island   Private room     54.0
+    ##  2   200  NA   Bronx   City Island   Private room     NA  
+    ##  3   300  NA   Bronx   City Island   Entire home/apt  NA  
+    ##  4   125   5   Bronx   City Island   Entire home/apt 159. 
+    ##  5    69   5   Bronx   City Island   Private room     54.0
+    ##  6   125   5   Bronx   City Island   Entire home/apt 159. 
+    ##  7    85   5   Bronx   City Island   Entire home/apt 159. 
+    ##  8    39   4.5 Bronx   Allerton      Private room     43.1
+    ##  9    95   5   Bronx   Allerton      Entire home/apt 159. 
+    ## 10   125   4.5 Bronx   Allerton      Entire home/apt 148. 
+    ## # ℹ 40,482 more rows

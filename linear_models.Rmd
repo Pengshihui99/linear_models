@@ -126,3 +126,39 @@ fit |>
   broom::tidy()
 ```
 
+
+# general model diagnotics with `mdoelr` package
+
+Regression diagnostics can identify issues in model fit, especially related to certain failures in model assumptions. Examining residuals and fitted values are therefore an imporant component of any modeling exercise.
+
+## draw some plots related to residuals
+```{r}
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = resid)) +
+  geom_density()
+
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = borough, y = resid)) +
+  geom_violin()
+
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = stars, y = resid)) +
+  geom_point()
+```
+* This example has some obvious issues, most notably the presence of extremely large outliers in price and a generally skewed residual distribution.
+* There are a few things we might try to do here – including:
+  * creating a formal rule for the exclusion of outliers
+  * transforming the price variable (e.g. using a log transformation)
+  * fitting a model that is robust to outliers. 
+    * (For what it’s worth, I’d probably use a combination of median regression, which is less sensitive to outliers than OLS, and maybe bootstrapping for inference.  If that’s not feasible, I’d omit rentals with price over $1000 (< 0.5% of the sample) from the primary analysis and examine these separately.  I usually avoid transforming the outcome, because the results model is difficult to interpret.)
+  
+### get prediction values 
+
+the modelr package can also provide us prediction values
+```{r}
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
