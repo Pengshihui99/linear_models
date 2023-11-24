@@ -162,3 +162,15 @@ the modelr package can also provide us prediction values
 modelr::add_predictions(nyc_airbnb, fit)
 ```
 
+
+# hypothesis test for categorical predictor
+
+fit a 'null' and 'alternative' model - doing a test for nested models
+```{r}
+fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+
+anova(fit_null, fit_alt) |> 
+  broom::tidy()
+```
+
