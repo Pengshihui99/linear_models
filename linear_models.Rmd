@@ -1,0 +1,128 @@
+---
+title: "linear models"
+author: "Shihui Peng"
+date: "2023-11-24"
+output: github_document
+---
+
+```{r, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## load and clean the Airbnb data
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb |> 
+  mutate(stars = review_scores_location / 2) |> 
+  select(price, stars, borough = neighbourhood_group, neighbourhood, room_type) |> 
+    filter(borough != "Staten Island")
+```
+
+# let's fit a model
+
+## fit a model
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+
+# or we can use this:
+fit =
+  nyc_airbnb |> 
+  lm(price ~ stars + borough, data = _)
+
+# let's look at the 'fit'
+fit
+```
+* no need to create dummy variables by ourselves, r will recognize the categorical variables and create for us.
+* The `lm` function begins with the formula specification – outcome on the left of the ~ and predictors separated by + on the right. 
+  * interactions between variables can be specified using `*`.
+  * You can also specify an intercept-only model (`outcome ~ 1`)
+  * a model with no intercept (`outcome ~ 0 + ...`) (default is with intercept)
+  * a model using all available predictors (`outcome ~ .`).
+
+## we can use these common functions, but usually we don't
+```{r}
+summary(fit)
+summary(fit)$coef
+coef(fit)
+# fitted.values(fit) --> pull out the fitted values
+```
+* The reason that we omit the output
+  * it’s a huge pain to deal with. `summary` produces an object of class `summary.lm`, which is also a list – that’s how we extracted the coefficients using `summary(fit)$coef`. `coef` produces a vector of coefficient values, and `fitted.values` is a vector of fitted values. None of this is tidy.
+
+## instead, we want tidy up the output (`broom::glance()`) and tidy up the coefficients (`broom::tidy()`):
+```{r}
+fit |> 
+  broom::glance()
+
+fit |> 
+  broom::tidy()
+
+# broom::tidy() outputs a table but this outputs a matrix (found based on...)
+summary(fit)$coef |> class()
+```
+* `broom::tidy()` outputs a table vs `summary(fit)$coef` outputs a matrix. so broom::tidy() is better b/c a table is easier to be used.
+
+### why we say a table is better... e.g.:
+```{r}
+fit |> 
+  broom::tidy() |> 
+  mutate(
+    term = str_replace(term, "^borough", "Borough: ")
+  ) |> 
+  select(term, estimate, p.value) |> 
+  knitr::kable(digits = 3)
+
+
+
+```
+* a good thing is everything after b::t is familiar tidyverse codes.
+* As an aside, broom::tidy works with lots of things, including most of the functions for model fitting you’re likely to run into (survival, mixed models, additive models, …).
+
+### when r creating indicator variables for categorical vars:
+
+```{r}
+fit_1 = 
+  nyc_airbnb |> 
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type)
+  ) |> 
+  lm(price ~ stars + borough, data = _)
+
+fit_1 |> 
+  broom::tidy()
+```
+* it takes whatever cat var I has started with (e.g. stars before borough here)
+* it assumes the same factor order as ggplot does (which is, alphabetical order). but we can mutate it if we need. as below:
+
+### let's fit another model
+
+```{r}
+fit = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+
+fit |> 
+  broom::tidy()
+```
+
