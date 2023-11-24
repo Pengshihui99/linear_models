@@ -316,3 +316,193 @@ anova(fit_null, fit_alt) |>
     ##   <chr>                             <dbl>  <dbl> <dbl>   <dbl>     <dbl>   <dbl>
     ## 1 price ~ stars + borough           30525 1.01e9    NA NA            NA       NA
     ## 2 price ~ stars + borough + …       30523 9.21e8     2  8.42e7     1394.       0
+
+this is kinda a partial F test.
+
+# borough-level differences
+
+if we try to understand what effect each of these variables has and does
+it differ by borough…
+
+## if we put directly add interaction terms..
+
+``` r
+fit =
+  nyc_airbnb |> 
+  lm(price ~ stars*borough + room_type*borough, data = _)
+
+fit |> 
+  broom::tidy()
+```
+
+    ## # A tibble: 16 × 5
+    ##    term                                   estimate std.error statistic   p.value
+    ##    <chr>                                     <dbl>     <dbl>     <dbl>     <dbl>
+    ##  1 (Intercept)                               90.1       75.4    1.19   0.232    
+    ##  2 stars                                      4.45      16.6    0.267  0.789    
+    ##  3 boroughBrooklyn                          -20.4       77.1   -0.265  0.791    
+    ##  4 boroughManhattan                           5.63      77.8    0.0723 0.942    
+    ##  5 boroughQueens                              1.51      83.5    0.0181 0.986    
+    ##  6 room_typePrivate room                    -52.9       17.8   -2.98   0.00288  
+    ##  7 room_typeShared room                     -70.5       41.6   -1.70   0.0896   
+    ##  8 stars:boroughBrooklyn                     16.5       17.0    0.973  0.331    
+    ##  9 stars:boroughManhattan                    22.7       17.1    1.33   0.185    
+    ## 10 stars:boroughQueens                        5.21      18.3    0.285  0.776    
+    ## 11 boroughBrooklyn:room_typePrivate room    -39.3       18.0   -2.18   0.0292   
+    ## 12 boroughManhattan:room_typePrivate room   -71.3       18.0   -3.96   0.0000754
+    ## 13 boroughQueens:room_typePrivate room      -16.3       19.0   -0.859  0.390    
+    ## 14 boroughBrooklyn:room_typeShared room     -35.3       42.9   -0.822  0.411    
+    ## 15 boroughManhattan:room_typeShared room    -83.1       42.5   -1.96   0.0503   
+    ## 16 boroughQueens:room_typeShared room       -24.4       44.4   -0.550  0.582
+
+- no need to do ‘stars + borough + stars x borough’ stuff like what we
+  did in SAS. just do ‘stars x borough’ and this includes main effects
+  and interaction term.
+- This works, but the output takes time to think through (output too
+  many rows) – the expected change in price comparing an entire
+  apartment to a private room in Queens, for example, involves the main
+  effect of room type and the Queens / private room interaction.
+
+one thing we can do is..
+
+## fit a separate linear model for each borough
+
+**remember, this provides same info as the above, but just easy to
+read.**
+
+### using map()
+
+``` r
+# we can do filter, based on our previous knowledge..
+## nyc_airbnb |> filter(...)
+
+# we can use this:
+nyc_airbnb |> 
+  nest(df = -borough) |> # nest everything into df, except for borough
+  mutate(
+    models = map(df, ~ lm(price ~ stars + room_type, data = .))
+  )
+```
+
+    ## # A tibble: 4 × 3
+    ##   borough   df                    models
+    ##   <chr>     <list>                <list>
+    ## 1 Bronx     <tibble [649 × 4]>    <lm>  
+    ## 2 Queens    <tibble [3,821 × 4]>  <lm>  
+    ## 3 Brooklyn  <tibble [16,810 × 4]> <lm>  
+    ## 4 Manhattan <tibble [19,212 × 4]> <lm>
+
+``` r
+# we can also create  a function first and then do the map():
+airbnb_lm = function(df) {
+  lm(price ~ stars + room_type, data = df)
+}
+
+nyc_airbnb |> 
+  nest(df = -borough) |> 
+  mutate(
+    models = map(df, airbnb_lm),
+    results = map(models, broom::tidy)
+  ) |> 
+  select(borough, results) |> 
+  unnest(results) |> 
+  select(borough, term, estimate) |> 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) |> 
+  knitr::kable(digits = 3)
+```
+
+| borough   | (Intercept) |  stars | room_typePrivate room | room_typeShared room |
+|:----------|------------:|-------:|----------------------:|---------------------:|
+| Bronx     |      90.067 |  4.446 |               -52.915 |              -70.547 |
+| Queens    |      91.575 |  9.654 |               -69.255 |              -94.973 |
+| Brooklyn  |      69.627 | 20.971 |               -92.223 |             -105.839 |
+| Manhattan |      95.694 | 27.110 |              -124.188 |             -153.635 |
+
+- and then we can have a look at the slopes for variable stars for each
+  linear reg model.
+- `nest()`: The nest() function is used to create a nested data frame by
+  grouping data based on certain variables.
+- `df = -borough`: This part specifies that the nesting should be done
+  based on the unique values of the borough variable. The `-borough`
+  part indicates that you want to exclude the borough variable from the
+  nested data frames and include all other variables in the data frames.
+
+same thing but just a little different… \### use a anonymous function
+inside map()
+
+``` r
+nyc_airbnb |> 
+  nest(data = -borough) |> 
+  mutate(
+    models = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(models, broom::tidy)
+  ) |> 
+  select(borough, results) |> 
+  unnest(results) |> 
+  select(borough, term, estimate) |> 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) |> 
+  knitr::kable(digits = 3)
+```
+
+| borough   | (Intercept) |  stars | room_typePrivate room | room_typeShared room |
+|:----------|------------:|-------:|----------------------:|---------------------:|
+| Bronx     |      90.067 |  4.446 |               -52.915 |              -70.547 |
+| Queens    |      91.575 |  9.654 |               -69.255 |              -94.973 |
+| Brooklyn  |      69.627 | 20.971 |               -92.223 |             -105.839 |
+| Manhattan |      95.694 | 27.110 |              -124.188 |             -153.635 |
+
+- `\(df) lm(price~stars+borough, data = df)` can create a anonymous
+  function, but this function is not saved or exists in environment.
+  only in this line.
+  - don’t do this in homework
+
+## an extreme example
+
+Fitting models to nested datasets is a way of performing stratified
+analyses. These have a tradeoff: stratified models make it easy to
+interpret covariate effects in each stratum, but don’t provide a
+mechanism for assessing the significance of differences across strata.
+
+An even more extreme example is the assessment of neighborhood effects
+in Manhattan. The code chunk below fits neighborhood-specific models:
+
+``` r
+manhattan_airbnb =
+  nyc_airbnb |> 
+  filter(borough == "Manhattan")
+
+manhattan_nest_lm_res =
+  manhattan_airbnb |> 
+  nest(data = -neighbourhood) |> 
+  mutate(
+    models = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(models, broom::tidy)) |> 
+  select(-data, -models) |> 
+  unnest(results)
+
+manhattan_nest_lm_res |> 
+  filter(str_detect(term, "room_type")) |> 
+  ggplot(aes(x = neighbourhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(~term) + 
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+```
+
+<img src="linear_models_files/figure-gfm/unnamed-chunk-15-1.png" width="90%" />
+\* There is, generally speaking, a reduction in room price for a private
+room or a shared room compared to an entire apartment, but this varies
+quite a bit across neighborhoods.
+
+- With this many factor levels, it really isn’t a good idea to fit
+  models with main effects or interactions for each. Instead, you’d be
+  best-off using a mixed model, with random intercepts and slopes for
+  each neighborhood. Although it’s well beyond the scope of this class,
+  code to fit a mixed model with neighborhood-level random intercepts
+  and random slopes for room type is below. And, of course, we can tidy
+  the results using a mixed-model spinoff of the broom package.
