@@ -286,3 +286,50 @@ manhattan_nest_lm_res |>
 * With this many factor levels, it really isn’t a good idea to fit models with main effects or interactions for each. Instead, you’d be best-off using a mixed model, with random intercepts and slopes for each neighborhood.  Although it’s well beyond the scope of this class, code to fit a mixed model with neighborhood-level random intercepts and random slopes for room type is below.  And, of course, we can tidy the results using a mixed-model spinoff of the broom package.
 
 
+# binary outcomes
+
+use data for homicides in Baltimore
+
+```{r}
+baltimore_df =
+  read_csv("data/homicide-data.csv") |> 
+  filter(city == "Baltimore") |> 
+  mutate(
+    resolved = as.numeric(disposition == "Closed by arrest"), # convert true and false to 1s and 0s
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) |> 
+  select(resolved, victim_age, victim_race, victim_sex)
+```
+
+## fit a logistic regression model
+
+```{r}
+fit_logistic =
+  baltimore_df |> 
+  glm(resolved ~ victim_age + victim_race + victim_sex,
+      data = _,
+      family = binomial())
+```
+* since this is not a continuous distribution, we need to use glm() and specify `family = binomial`
+
+look at model results...
+
+```{r}
+fit_logistic |> 
+  broom::tidy() |> 
+  mutate(
+    OR = exp(estimate)
+  ) |> 
+  select(term, estimate, OR, p.value) |> 
+  knitr::kable(digits = 3)
+```
+* bsaed on the output, we can find that:
+  * Homicides in which the victim is Black are substantially less likely to be resolved that those in which the victim is white;  for other races the effects are not significant, possible due to small sample sizes.  Homicides in which the victim is male are significantly less like to be resolved than those in which the victim is female.  The effect of age is statistically significant, but careful data inspections should be conducted before interpreting too deeply.
+
+We can also compute fitted values; similarly to the estimates in the model summary, these are expressed as log odds and can be transformed to produce probabilities for each subject.
+```{r}
+baltimore_df |> 
+  modelr::add_predictions(fit_logistic) |> 
+  mutate(fitted_prob = boot::inv.logit(pred))
+```
+
