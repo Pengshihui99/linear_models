@@ -1,0 +1,127 @@
+---
+title: "cross_validation"
+author: "Shihui Peng"
+date: "2023-11-29"
+output: html_document
+---
+
+```{r, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(modelr)
+set.seed(1)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+# nonlinear data and cross validation
+
+## first create a nonlinear dataset
+```{r}
+nonlin_df =
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10 * (x - 0.3) ^2 + rnorm(100, 0, 0.3)
+  )
+
+nonlin_df |> 
+  ggplot(aes(x = x, y = y)) + geom_point()
+```
+
+then we are trying to pick b/t a few diff models that might work for this dataset. we are gonna see which of those models has the best prediction accuracy.
+
+## do the train / test split
+
+### one: by hand
+
+#### create the train set and test set
+```{r}
+train_df = sample_n(nonlin_df, 80) |> arrange(id)
+test_df = anti_join(nonlin_df, train_df, by = "id")
+
+# we can check in a scatterplot:
+train_df |> 
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_point(data = test_df, color = "red")
+```
+* our question:
+  * can i fit some curves through the black points here and then see how well that curve predicts the red points here.
+  * it is not gonna give me perfect predictions, as there's gonna be residual error b/c there's some noise floating around in here. but we can choose the best curve with smallest noise.
+
+#### fit a linear model
+```{r}
+linear_mod = lm(y ~ x, data = train_df)
+
+smooth_mod = mgcv::gam(y ~ s(x), data = train_df)
+
+wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
+
+# quick visualization
+train_df |> 
+  modelr::add_predictions(linear_mod) |> 
+  ggplot(aes(x=x,y=y)) + geom_point() + geom_line(aes(y = pred))
+
+train_df |> 
+  modelr::add_predictions(smooth_mod) |> 
+  ggplot(aes(x=x,y=y)) + geom_point() + geom_line(aes(y = pred))
+
+train_df |> 
+  modelr::add_predictions(wiggly_mod) |> 
+  ggplot(aes(x=x,y=y)) + geom_point() + geom_line(aes(y = pred))
+
+# I can also use the handy modelr::gather_predictions function – this is, essentially, a short way of adding predictions for several models to a data frame and then “pivoting” so the result is a tidy, “long” dataset that’s easily plottable.
+
+train_df |> 
+  gather_predictions(linear_mod, smooth_mod, wiggly_mod) |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red") + 
+  facet_wrap(~model)
+```
+* `s(x)`: smooth term of x
+  * no need to specify to use quadralic or cubic or sth, r will determine internally how smooth is smooth ehough.
+* `mgcv` package can fit generalized additive models
+  * `k = 30`: i will get 30 individual line segments
+  * `sp = 10e-6`: mgcv will try to stop us from doing sth dumb, but this is like forcing us to do sth dumb.
+* `modelr::gather_predictions` function
+  * a short way of adding predictions for several models to a data frame and then “pivoting” so the result is a tidy, “long” dataset that’s easily plottable.
+  * A quick visual inspection suggests that the linear model is too simple, the standard gam fit is pretty good, and the wiggly gam fit is too complex. Put differently, the linear model is too simple and, no matter what training data we use, will never capture the true relationship between variables – it will be consistently wrong due to its simplicity, and is therefore biased. The wiggly fit, on the other hand, is chasing data points and will change a lot from one training dataset to the the next – it will be consistently wrong due to its complexity, and is therefore highly variable. Both are bad!
+
+#### calculate root mean squared error for unnested models to compare
+* I want to know which of these model is the one that i want to use for implementing an analysis - but they are not nested, so i cannot use AIC or BIC. I have to use other methods.
+  * we can use root mean squared error:
+```{r}
+# in modelr package
+
+# RMSEs on training data can be misleading...
+rmse(linear_mod, train_df)
+rmse(smooth_mod, train_df)
+rmse(wiggly_mod, train_df)
+
+# RMSEs on testing data gives a sense of out-of-sample prediction accuracy!
+rmse(linear_mod, test_df)
+rmse(smooth_mod, test_df)
+rmse(wiggly_mod, test_df)
+```
+* The modelr has other outcome measures – RMSE is the most common, but median absolute deviation is pretty common as well.
+* we can see the the wiggly_mod has the lowest root mean squared error in train set, but smooth_mod has the lowest rmse in test set
+  * problem: it works on this ds and gives us the best predictions for this ds that we use to train the model. but it probably won't give us the best predictions on some future dataset.
+  * The RMSEs are suggestive that both nonlinear models work better than the linear model, and that the smooth fit is worse than the wiggly fit. However, to get a sense of model stability we really need to iterate this whole process. Of course, this could be done using loops but that’s a hassle …
+
+
