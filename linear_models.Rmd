@@ -138,6 +138,13 @@ nyc_airbnb |>
   ggplot(aes(x = resid)) +
   geom_density()
 
+# qq plot
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line()
+
 nyc_airbnb |> 
   modelr::add_residuals(fit) |> 
   ggplot(aes(x = borough, y = resid)) +

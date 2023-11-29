@@ -243,6 +243,21 @@ nyc_airbnb |>
 <img src="linear_models_files/figure-gfm/unnamed-chunk-9-1.png" width="90%" />
 
 ``` r
+# qq plot
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line()
+```
+
+    ## Warning: Removed 9962 rows containing non-finite values (`stat_qq()`).
+
+    ## Warning: Removed 9962 rows containing non-finite values (`stat_qq_line()`).
+
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-2.png" width="90%" />
+
+``` r
 nyc_airbnb |> 
   modelr::add_residuals(fit) |> 
   ggplot(aes(x = borough, y = resid)) +
@@ -251,7 +266,7 @@ nyc_airbnb |>
 
     ## Warning: Removed 9962 rows containing non-finite values (`stat_ydensity()`).
 
-<img src="linear_models_files/figure-gfm/unnamed-chunk-9-2.png" width="90%" />
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-3.png" width="90%" />
 
 ``` r
 nyc_airbnb |> 
@@ -262,7 +277,7 @@ nyc_airbnb |>
 
     ## Warning: Removed 9962 rows containing missing values (`geom_point()`).
 
-<img src="linear_models_files/figure-gfm/unnamed-chunk-9-3.png" width="90%" />
+<img src="linear_models_files/figure-gfm/unnamed-chunk-9-4.png" width="90%" />
 \* This example has some obvious issues, most notably the presence of
 extremely large outliers in price and a generally skewed residual
 distribution. \* There are a few things we might try to do here –
