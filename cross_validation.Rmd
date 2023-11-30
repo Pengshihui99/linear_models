@@ -124,4 +124,90 @@ rmse(wiggly_mod, test_df)
   * problem: it works on this ds and gives us the best predictions for this ds that we use to train the model. but it probably won't give us the best predictions on some future dataset.
   * The RMSEs are suggestive that both nonlinear models work better than the linear model, and that the smooth fit is worse than the wiggly fit. However, to get a sense of model stability we really need to iterate this whole process. Of course, this could be done using loops but that’s a hassle …
 
+### use modelr for CV
+
+#### `crossv_mc()`, and resample, and convert resample to tibble
+```{r}
+cv_df =
+  nonlin_df |> 
+  crossv_mc(n = 100)
+```
+* `crossv_mc`: generate test-training pairs for cross validation test
+  * `n = 100` indicates the number of folds or iterations for the cross-validation.
+
+however, the created train and test set is not a tibble, but a resample.
+```{r}
+cv_df |> pull(train) |> nth(1)
+cv_df |> pull(train) |> nth(2)
+# it just saves the row numbers
+```
+* what `resample` does is keep track of which rows are in this sample, rather than storing the dataset over and over again.
+  * rather than repeating the dataset a bunch of times, it saves the data once and stores the indexes for each training / testing split using a resample object.
+  
+we can convert a resample object to a data frame using `as_tibble()`
+```{r}
+cv_df |> pull(train) |> nth(3) |> as_tibble()
+```
+
+therefore...we convert a resample object to a tibble object, and then we can have dataframes for analysis
+```{r}
+cv_df =
+  nonlin_df |> 
+  crossv_mc(n = 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+#### apply each model to all training ds, and evaluate on all testing ds
+
+now, i want to fit a linear model to all of my training ds and compute root mean squared errors on all my testing ds. Then I want to do this again for a smooth model and again for a wiggly model. 
+* this can give me a sense of how much of that diff in prediction accuracy is attributable to (like one model actually better than another), and how much of it is arrtibutable to the randomness.
+```{r}
+cv_results =
+  cv_df |> 
+  mutate(
+    linear_fit = map(train, \(df) lm(y~x, data = df)),
+    smooth_fit = map(train, \(df) mgcv::gam(y~s(x), data = df)),
+    wiggly_fit = map(train, \(df) mgcv::gam(y~s(x, k = 30), sp = 10e-6, data = df))
+  ) |> 
+  mutate(
+    rmse_linear = map2_dbl(linear_fit, test, \(mod, df) rmse(mod, df)),
+    rmse_smooth = map2_dbl(smooth_fit, test, \(mod, df) rmse(mod, df)),
+    rmse_wiggly = map2_dbl(wiggly_fit, test, \(mod, df) rmse(mod, df))
+  )
+```
+* `\(df) lm(y~x, data = df)` is the shorthand of this: `lin_mod_function = function(df){lm(y~x, data = df)}`
+* here, `y` and `x` are not arguments.
+  * inside train ds, there are y col and x col. so here this means treat the y col as y and x col as x in a linear reg.
+* `map2()`: iterate over 2 arguments / inputs at a time
+* `map2_dbl()`: return a double vector. use it when you know that your output will be exactly 1 number.
+
+```{r}
+cv_results |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model_type",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) |> 
+  group_by(model_type) |> 
+  summarise(m_rmse = mean(rmse))
+
+cv_results |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model_type",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) |> 
+  ggplot(aes(x = model_type, y = rmse)) + geom_violin()
+```
+* Repeating the split is helpful
+  * now we get a sense of variance in prediction error and can compare prediction error distributions across methods. The **smooth fit** is a clear winner! (even though wiggly stuff overlap smooth stuff sometimes)
+* It’s worth remembering, though, that this isn’t testing a null hypothesis and there aren’t p-values as a result.
+
 
