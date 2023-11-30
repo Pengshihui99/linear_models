@@ -2,7 +2,7 @@
 title: "cross_validation"
 author: "Shihui Peng"
 date: "2023-11-29"
-output: html_document
+output: github_document
 ---
 
 ```{r, echo=FALSE, message=FALSE}
