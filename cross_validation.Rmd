@@ -163,6 +163,7 @@ cv_df =
 #### apply each model to all training ds, and evaluate on all testing ds
 
 now, i want to fit a linear model to all of my training ds and compute root mean squared errors on all my testing ds. Then I want to do this again for a smooth model and again for a wiggly model. 
+
 * this can give me a sense of how much of that diff in prediction accuracy is attributable to (like one model actually better than another), and how much of it is arrtibutable to the randomness.
 ```{r}
 cv_results =
@@ -206,8 +207,93 @@ cv_results |>
   ) |> 
   ggplot(aes(x = model_type, y = rmse)) + geom_violin()
 ```
-* Repeating the split is helpful
+
+* Repeating the split is helpful 
   * now we get a sense of variance in prediction error and can compare prediction error distributions across methods. The **smooth fit** is a clear winner! (even though wiggly stuff overlap smooth stuff sometimes)
 * It’s worth remembering, though, that this isn’t testing a null hypothesis and there aren’t p-values as a result.
 
+# example: child growth
 
+## import dataset
+```{r}
+child_growth = read_csv("data/nepalese_children.csv")
+```
+
+## visualization:
+```{r}
+child_growth |> 
+  ggplot(aes(x = weight, y = armc)) + geom_point(alpha=0.5)
+```
+* The plots suggests some non-linearity, especially at the low end of the weight distribution. 
+  * We’ll try three models: a linear fit;  a piecewise linear fit;  and a smooth fit using gam. 
+    * For the piecewise linear fit, we need to add a “change point term” to our dataframe.  (Like additive models, for now it’s not critical that you understand everything about a piecewise linear fit – we’ll see a plot of the results soon, and the intuition from that is enough for our purposes.)
+
+## question: do we need to take into account any kind of non-linearity in this data set, if we want to regress armc on weight or other variables?
+
+create a piecewise linear fit
+```{r}
+child_growth =
+  child_growth |> 
+  mutate(weight_cp = (weight > 7) * (weight - 7))
+```
+
+fits each of the candidate models to the full dataset.
+```{r}
+linear_mod = lm(armc ~ weight, data = child_growth)
+pwl_mod    = lm(armc ~ weight + weight_cp, data = child_growth)
+smooth_mod = mgcv::gam(armc ~ s(weight), data = child_growth)
+```
+
+* The piecewise linear model is nested in the linear model and could be assessed using statistical significance, but the smooth model is not nested in anything else. (Also, comparing a piecewise model with a changepoint at 7 to a piecewise model with a changepoint at 8 would be a non-nested comparison…)
+
+As before, I’ll plot the three models to get intuition for goodness of fit...
+```{r}
+child_growth |> 
+  gather_predictions(linear_mod, pwl_mod, smooth_mod) |> 
+  ggplot(aes(x = weight, y = armc)) + geom_point(alpha=.5) + geom_line(aes(y = pred), color = "red") + 
+  facet_wrap(~model)
+```
+
+* It’s not clear which is best – the linear model is maybe too simple, but the piecewise and non-linear models are pretty similar! Better check prediction errors using the same process as before – again, since I want to fit a gam model, I have to convert the resample objects produced by crossv_mc to dataframes, but wouldn’t have to do this if I only wanted to compare the linear and piecewise models.
+
+```{r}
+cv_df = 
+  crossv_mc(child_growth, n = 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+Next I’ll use mutate + map & map2 to fit models to training data and obtain corresponding RMSEs for the testing data.
+```{r}
+cv_df =
+  cv_df |> 
+  mutate(
+    linear_mod = map(train, \(df) lm(armc~weight, data = df)),
+    pwl_mod = map(train, \(df) lm(armc~weight + weight_cp, data = df)),
+    smooth_mod = map(train, \(df) mgcv::gam(armc~s(weight), data = df))
+  ) |> 
+  mutate(
+    rmse_linear = map2_dbl(linear_mod, test, \(mod, df) rmse(mod, df)),
+    rmse_pwl = map2_dbl(pwl_mod, test, \(mod, df) rmse(mod, df)),
+    rmse_smooth = map2_dbl(smooth_mod, test, \(mod, df) rmse(mod, df))
+  )
+```
+
+Finally, I’ll plot the prediction error distribution for each candidate model.
+```{r}
+cv_df |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model_type",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) |> 
+  ggplot(aes(x = model_type, y = rmse)) + geom_violin()
+```
+
+* Based on these results, there’s clearly some improvement in predictive accuracy gained by allowing non-linearity – whether this is sufficient to justify a more complex model isn’t obvious, though.  Among the non-linear models, the smooth fit from gam might be a bit better than the piecewise linear model.  Which candidate model is best, though, depends a bit on the need to balance complexity with goodness of fit and interpretability.  
+* In the end, I’d probably go with the piecewise linear model – the non-linearity is clear enough that it should be accounted for, and the differences between the piecewise and gam fits are small enough that the easy interpretation of the piecewise model “wins”.
+* https://drsimonj.svbtle.com/k-fold-cross-validation-with-modelr-and-broom : This post has a pretty detailed analysis of K fold CV.
