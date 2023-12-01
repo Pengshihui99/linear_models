@@ -357,3 +357,20 @@ Take a look at the graph in chunk 13. \* so, we get the distribution of
 price, overall it is a more accurate reflection of the distribution of
 these regression coefficients in the pop. This is not the one that we
 can get just from a linear model
+
+another way using `modelr::bootstrap`
+
+``` r
+nyc_airbnb |> 
+  filter(borough == "Manhattan") |> 
+  modelr::bootstrap(n = 1000) |> 
+  mutate(
+    models = map(strap, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(models, broom::tidy)) |> 
+  select(results) |> 
+  unnest(results) |> 
+  filter(term == "stars") |> 
+  ggplot(aes(x = estimate)) + geom_density()
+```
+
+![](bootstrapping_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
